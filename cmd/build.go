@@ -57,6 +57,8 @@ var buildCmd = &cobra.Command{
 		}
 		color.Green("Found package %s\n", pkg)
 		downloadsource(args[0], barrellsLoc)
+		dep := getDependencies(pkg, args[0])
+		installDependencies(dep, pkg, barrellsLoc)
 		runBuildCommand(pkg, args[0])
 	},
 }
@@ -524,4 +526,123 @@ func untarxz(r io.Reader, pkg string, dst string) {
 			f.Close()
 		}
 	}
+}
+func getDependencies(path string, pkg string) []string {
+	content, err := getFileContent(path)
+	if err != nil {
+		panic(err)
+	}
+	cmd := exec.Command("python3")
+	closer, err := cmd.StdinPipe()
+	if err != nil {
+		panic(err)
+	}
+	defer closer.Close()
+	r, w, _ := os.Pipe()
+	cmd.Stdout = w
+	cmd.Stderr = os.Stderr
+	cmd.Dir = path[:len(path)-len(pkg)-3]
+	err = cmd.Start()
+	if err != nil {
+		panic(err)
+	}
+	closer.Write(content)
+	closer.Write([]byte("\n"))
+	io.WriteString(closer, fmt.Sprintf("pkg=%s()\n", convertToReadableString(strings.ToLower(pkg))))
+	io.WriteString(closer, "print(pkg.dependencies)\n")
+	closer.Close()
+	w.Close()
+	err = cmd.Wait()
+	if err != nil {
+		fmt.Println(color.RedString("Unable to get dependencies %s", pkg))
+		panic(err)
+	}
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	c := strings.Replace(buf.String(), " ", "", -1)
+	c = strings.Replace(c, "\n", "", -1)
+	c = strings.Replace(c, "[", "", -1)
+	c = strings.Replace(c, "]", "", -1)
+	c = strings.Replace(c, "\"", "", -1)
+	c = strings.Replace(c, "'", "", -1)
+	if strings.Contains(buf.String(), "Traceback(mostrecentcalllast)") {
+		return []string{}
+	}
+	return strings.Split(c, ",")
+}
+func installDependencies(dependencies []string, path string, barrellsLoc string) {
+	//check if already installed by using which command
+	for _, dependency := range dependencies {
+		color.Yellow("Installing %s as dependency", dependency)
+		cmd := exec.Command("which", dependency)
+		r, w, err := os.Pipe()
+		if err != nil {
+			panic(err)
+		}
+		cmd.Stdout = w
+		cmd.Start()
+		w.Close()
+		cmd.Wait()
+		var buf bytes.Buffer
+		io.Copy(&buf, r)
+		if buf.String() != "" {
+			color.Yellow("%s already installed", dependency)
+			continue
+		}
+		if IsLib(dependency, barrellsLoc) && checkIfPackageExists(dependency) {
+			color.Yellow("%s is a lib and already installed", dependency)
+			continue
+		}
+		_, err = os.Stat(fmt.Sprintf("%s/%s.py", barrellsLoc, convertToReadableString(strings.ToLower(dependency))))
+		if os.IsNotExist(err) {
+			color.Yellow("%s is not downloadable by ferment, skipping...", dependency)
+			continue
+		}
+		fmt.Printf(color.YellowString("Now Installing %s\n"), dependency)
+		cmd = exec.Command("ferment", "install", dependency)
+		err = cmd.Run()
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+func IsLib(pkg string, location string) bool {
+	content, err := os.ReadFile(fmt.Sprintf("%s/%s.py", location, convertToReadableString(strings.ToLower(pkg))))
+	if err != nil {
+		panic(err)
+	}
+	cmd := exec.Command("python3")
+	closer, err := cmd.StdinPipe()
+	if err != nil {
+		panic(err)
+	}
+	defer closer.Close()
+	r, w, _ := os.Pipe()
+	cmd.Stdout = w
+	cmd.Stderr = w
+	cmd.Dir = location
+	cmd.Start()
+	closer.Write(content)
+	closer.Write([]byte("\n"))
+	io.WriteString(closer, fmt.Sprintf("pkg=%s()\n", convertToReadableString(strings.ToLower(pkg))))
+	io.WriteString(closer, "print(pkg.lib)\n")
+	closer.Close()
+	w.Close()
+	cmd.Wait()
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	if strings.Contains(buf.String(), "no attribute") {
+		return false
+	} else {
+		return strings.Contains(buf.String(), "True")
+	}
+
+}
+func uploadtoapi(pkg string) {
+	compress(fmt.Sprintf("/tmp/%s.tar.gz", pkg), fmt.Sprintf("/tmp/fermenter/%s", pkg))
+}
+func checkIfPackageExists(pkg string) bool {
+	pkg = convertToReadableString(strings.ToLower(pkg))
+	_, err := os.ReadDir(fmt.Sprintf("/usr/local/ferment/Installed/%s", pkg))
+	return err == nil
 }
