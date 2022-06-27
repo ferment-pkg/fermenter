@@ -8,21 +8,27 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
+	"math"
+
+	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
-	"path"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/fatih/color"
 	"github.com/go-git/go-git/v5"
+	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
 	"github.com/theckman/yacspin"
 	"github.com/xi2/xz"
@@ -35,6 +41,11 @@ var buildCmd = &cobra.Command{
 	Long:  `Build and upload prebuilds to the server holding other prebuilds`,
 	Run: func(cmd *cobra.Command, args []string) {
 		barrellsLoc, err := cmd.Flags().GetString("barrells")
+		if err != nil {
+			panic(err)
+		}
+		useExisting, err := cmd.Flags().GetBool("useexisting")
+
 		if err != nil {
 			panic(err)
 		}
@@ -56,10 +67,13 @@ var buildCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		color.Green("Found package %s\n", pkg)
-		downloadsource(args[0], barrellsLoc)
-		dep := getDependencies(pkg, args[0])
-		installDependencies(dep, pkg, barrellsLoc)
-		runBuildCommand(pkg, args[0])
+		if !useExisting {
+			downloadsource(args[0], barrellsLoc)
+			dep := getDependencies(pkg, args[0])
+			installDependencies(dep, pkg, barrellsLoc)
+			runBuildCommand(pkg, args[0])
+		}
+		uploadtoapi(args[0])
 	},
 }
 
@@ -80,42 +94,17 @@ func init() {
 	}
 	location = location[:len(location)-len("/fermenter")]
 	buildCmd.Flags().String("barrells", fmt.Sprintf("%s/Barrells", location), "Path for the barrells")
+	buildCmd.Flags().BoolP("useexisting", "E", false, "Use existing build")
 }
 func compress(outputPath string, inputPath string) {
-	var file *os.File
-	var err error
-	var writer *gzip.Writer
-	var body []byte
-
-	if file, err = os.OpenFile(outputPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644); err != nil {
-		log.Fatalln(err)
-	}
-	defer file.Close()
-
-	if writer, err = gzip.NewWriterLevel(file, gzip.BestCompression); err != nil {
-		log.Fatalln(err)
-	}
-	defer writer.Close()
-
-	tw := tar.NewWriter(writer)
-	defer tw.Close()
-
-	if body, err = ioutil.ReadFile(inputPath); err != nil {
-		log.Fatalln(err)
-	}
-
-	if body != nil {
-		hdr := &tar.Header{
-			Name: path.Base(inputPath),
-			Mode: int64(0644),
-			Size: int64(len(body)),
-		}
-		if err := tw.WriteHeader(hdr); err != nil {
-			println(err)
-		}
-		if _, err := tw.Write(body); err != nil {
-			println(err)
-		}
+	cmd := exec.Command("tar", "-czf", outputPath, "-C/tmp/fermenter", inputPath)
+	cmd.Dir = "/tmp"
+	cmd.Env = []string{"GZIP=-9", "GZIP_OPT=-9"}
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		color.Red("ERROR - COMPRESS: %s", err)
+		os.Exit(1)
 	}
 }
 func isDir(path string) (bool, error) {
@@ -639,10 +628,167 @@ func IsLib(pkg string, location string) bool {
 
 }
 func uploadtoapi(pkg string) {
-	compress(fmt.Sprintf("/tmp/%s.tar.gz", pkg), fmt.Sprintf("/tmp/fermenter/%s", pkg))
+
+	f, _ := os.OpenFile("/tmp/fermenter.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	l := log.New(f, "UPLOAD: ", log.Ltime)
+	cfg := yacspin.Config{
+		Frequency:         100 * time.Millisecond,
+		CharSet:           yacspin.CharSets[14],
+		Suffix:            " Upload",
+		SuffixAutoColon:   true,
+		StopCharacter:     "✓",
+		StopColors:        []string{"fgGreen"},
+		StopMessage:       " Complete",
+		StopFailMessage:   " Failed",
+		StopFailCharacter: "✗",
+		StopFailColors:    []string{"fgRed"},
+	}
+
+	spinner, err := yacspin.New(cfg)
+	if err != nil {
+		color.Red("ERROR - SPINNER INIT: %s", err)
+		os.Exit(1)
+	}
+	spinner.Start()
+	spinner.Message("Initializing...")
+	compress(fmt.Sprintf("/tmp/%s.tar.gz", pkg), pkg)
+	u := url.URL{Scheme: "wss", Host: "api.ferment.tk"}
+	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	interrupt := make(chan os.Signal, 1)
+	done := make(chan bool)
+	replied := make(chan bool)
+	signal.Notify(interrupt, os.Interrupt)
+	defer c.Close()
+	go func() {
+		for {
+			select {
+			case <-interrupt:
+				color.Yellow("\nInterrupted Now Cleaning Up...")
+				os.Remove(fmt.Sprintf("/tmp/%s.tar.gz", pkg))
+				os.Remove(fmt.Sprintf("/tmp/%s.tar.gz.part", pkg))
+				c.WriteMessage(websocket.CloseMessage, []byte{})
+				os.Exit(1)
+			case <-done:
+				c.Close()
+				return
+			}
+		}
+	}()
+	go func() {
+		for {
+			_, content, err := c.ReadMessage()
+			if err != nil {
+				l.Fatal(err)
+			}
+			l.Println(string(content))
+			if strings.Contains(string(content), "Uploaded") {
+				replied <- true
+			}
+		}
+	}()
+	if err != nil {
+		spinner.StopFailMessage("Failed - " + err.Error())
+		spinner.StopFail()
+		os.Exit(1)
+	}
+
+	cmd := exec.Command("split", "-b", "90M", "-d", fmt.Sprintf("/tmp/%s.tar.gz", pkg), fmt.Sprintf("/tmp/%s.tar.gz.part", pkg))
+	cmd.Dir = "/tmp/"
+	err = cmd.Run()
+	if err != nil {
+		spinner.StopFailMessage("Failed - " + err.Error())
+		spinner.StopFail()
+	}
+
+	type dataInternal struct {
+		File string `json:"file"`
+		Part int    `json:"part"`
+		Name string `json:"name"`
+		Of   int    `json:"of"`
+		Data string `json:"data"`
+	}
+	type Data struct {
+		Event string       `json:"event"`
+		Data  dataInternal `json:"data"`
+	}
+	if err != nil {
+		spinner.StopFailMessage("Failed - " + err.Error())
+		spinner.StopFail()
+		os.Exit(1)
+	}
+	var data Data
+	stat, err := os.Stat(fmt.Sprintf("/tmp/%s.tar.gz", pkg))
+	if err != nil {
+		spinner.StopFailMessage("Failed - " + err.Error())
+		spinner.StopFail()
+		os.Exit(1)
+	}
+	megabytes := math.Round((float64)(stat.Size() / 1e6))
+	data.Data.Of = int(megabytes / 90)
+	if data.Data.Of == 0 {
+		data.Data.Of++
+	}
+	data.Data.Name = pkg
+	data.Event = "upload"
+	data.Data.File = fmt.Sprintf("%s.tar.gz", pkg)
+	data.Data.Part = 1
+	for i := 1; i <= data.Data.Of; i++ {
+		spinner.Message(fmt.Sprintf("Uploading Part %d of %d... (%fmb)", i, data.Data.Of, megabytes))
+		data.Data.Part = i
+		//list all files in /tmp
+		files, err := ioutil.ReadDir("/tmp")
+		if err != nil {
+			spinner.StopFailMessage("Failed - " + err.Error())
+			spinner.StopFail()
+			os.Exit(1)
+		}
+		var f string
+		for _, fi := range files {
+			if strings.Contains(fi.Name(), "tar.gz") && strings.Contains(fi.Name(), fmt.Sprintf("%d", i-1)) && strings.Contains(fi.Name(), pkg) {
+				f = fi.Name()
+				break
+			}
+		}
+		content, err := os.ReadFile(fmt.Sprintf("/tmp/%s", f))
+		if err != nil {
+			spinner.StopFailMessage("Failed - " + err.Error())
+			spinner.StopFail()
+			os.Exit(1)
+		}
+		encoded := base64Encode(content)
+		data.Data.Data = encoded
+		en, err := json.Marshal(data)
+		if err != nil {
+			spinner.StopFailMessage("Failed - " + err.Error())
+			spinner.StopFail()
+			os.Exit(1)
+		}
+		c.EnableWriteCompression(true)
+		err = c.WriteMessage(websocket.TextMessage, en)
+		if err != nil {
+			spinner.StopFailMessage("Failed - " + err.Error())
+			spinner.StopFail()
+			os.Exit(1)
+		}
+		r := <-replied
+		//wait till r is true
+		for !r {
+			r = <-replied
+		}
+		spinner.Message(fmt.Sprintf("Uploaded Part %d of %d", i, data.Data.Of))
+		os.WriteFile("test.json", en, 0644)
+
+	}
+	spinner.Message("Uploading Complete")
+	spinner.Stop()
+	done <- true
+
 }
 func checkIfPackageExists(pkg string) bool {
 	pkg = convertToReadableString(strings.ToLower(pkg))
 	_, err := os.ReadDir(fmt.Sprintf("/usr/local/ferment/Installed/%s", pkg))
 	return err == nil
+}
+func base64Encode(str []byte) string {
+	return base64.StdEncoding.EncodeToString(str)
 }
