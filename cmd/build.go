@@ -630,11 +630,6 @@ func IsLib(pkg string, location string) bool {
 func uploadtoapi(pkg string) {
 
 	f, _ := os.OpenFile("/tmp/fermenter.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	fi, err := os.Stat(fmt.Sprintf("/tmp/%s.tar.gz", pkg))
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(fi.Size())
 	l := log.New(f, "UPLOAD: ", log.Ltime)
 	cfg := yacspin.Config{
 		Frequency:         100 * time.Millisecond,
@@ -657,8 +652,17 @@ func uploadtoapi(pkg string) {
 	spinner.Start()
 	spinner.Message("Initializing...")
 	compress(fmt.Sprintf("/tmp/%s.tar.gz", pkg), pkg)
+	fi, err := os.Stat(fmt.Sprintf("/tmp/%s.tar.gz", pkg))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(fi.Size())
 	u := url.URL{Scheme: "wss", Host: "api.ferment.tk"}
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		color.Red("ERROR - DIAL: %s", err)
+		os.Exit(1)
+	}
 	interrupt := make(chan os.Signal, 1)
 	done := make(chan bool)
 	replied := make(chan bool)
