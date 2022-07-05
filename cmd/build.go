@@ -630,6 +630,11 @@ func IsLib(pkg string, location string) bool {
 func uploadtoapi(pkg string) {
 
 	f, _ := os.OpenFile("/tmp/fermenter.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	fi, err := os.Stat(fmt.Sprintf("/tmp/%s.tar.gz", pkg))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(fi.Size())
 	l := log.New(f, "UPLOAD: ", log.Ltime)
 	cfg := yacspin.Config{
 		Frequency:         100 * time.Millisecond,
@@ -686,17 +691,11 @@ func uploadtoapi(pkg string) {
 			}
 		}
 	}()
-	if err != nil {
-		spinner.StopFailMessage("Failed - " + err.Error())
-		spinner.StopFail()
-		os.Exit(1)
-	}
-
 	cmd := exec.Command("split", "-b", "90M", "-d", fmt.Sprintf("/tmp/%s.tar.gz", pkg), fmt.Sprintf("/tmp/%s.tar.gz.part", pkg))
 	cmd.Dir = "/tmp/"
 	err = cmd.Run()
 	if err != nil {
-		spinner.StopFailMessage("Failed - " + err.Error())
+		spinner.StopFailMessage("Failed Line:699 - " + err.Error())
 		spinner.StopFail()
 	}
 
@@ -710,11 +709,6 @@ func uploadtoapi(pkg string) {
 	type Data struct {
 		Event string       `json:"event"`
 		Data  dataInternal `json:"data"`
-	}
-	if err != nil {
-		spinner.StopFailMessage("Failed - " + err.Error())
-		spinner.StopFail()
-		os.Exit(1)
 	}
 	var data Data
 	stat, err := os.Stat(fmt.Sprintf("/tmp/%s.tar.gz", pkg))
