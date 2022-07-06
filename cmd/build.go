@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math"
+	"strconv"
 
 	"io"
 	"log"
@@ -688,11 +689,7 @@ func uploadtoapi(pkg string) {
 			}
 		}
 	}()
-	cmd := exec.Command("split", "-b", "90M", "-d", fmt.Sprintf("/tmp/%s.tar.gz", pkg), fmt.Sprintf("%s.tar.gz.part", pkg))
-	cmd.Dir = "/tmp/"
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	err = cmd.Run()
+	split(fmt.Sprintf("/tmp/%s.tar.gz", pkg))
 	if err != nil {
 		spinner.StopFailMessage("Failed Line:699 - " + err.Error())
 		spinner.StopFail()
@@ -784,4 +781,49 @@ func checkIfPackageExists(pkg string) bool {
 }
 func base64Encode(str []byte) string {
 	return base64.StdEncoding.EncodeToString(str)
+}
+
+//Split a file into smaller chunks
+//Splits every 90mb to allow for uploads of more than 90mb
+//Helps bypass cloudflare limit
+func split(fileToBeChunked string) {
+	file, err := os.Open(fileToBeChunked)
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	defer file.Close()
+
+	fileInfo, _ := file.Stat()
+
+	var fileSize int64 = fileInfo.Size()
+
+	const fileChunk = 1e7 * 9 // 90 MB
+
+	// calculate total number of parts the file will be chunked into
+
+	totalPartsNum := uint64(math.Ceil(float64(fileSize) / float64(fileChunk)))
+
+	for i := uint64(0); i < totalPartsNum; i++ {
+
+		partSize := int(math.Min(fileChunk, float64(fileSize-int64(i*fileChunk))))
+		partBuffer := make([]byte, partSize)
+
+		file.Read(partBuffer)
+
+		// write to disk
+		fileName := fileToBeChunked + ".part" + strconv.FormatUint(i, 10)
+		_, err := os.Create(fileName)
+
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		// write/save buffer to disk
+		ioutil.WriteFile(fileName, partBuffer, os.ModeAppend)
+
+	}
 }
