@@ -651,12 +651,7 @@ func uploadtoapi(pkg string) {
 	}
 	spinner.Start()
 	spinner.Message("Initializing...")
-	compress(fmt.Sprintf("/tmp/%s.tar.gz", pkg), pkg)
-	fi, err := os.Stat(fmt.Sprintf("/tmp/%s.tar.gz", pkg))
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(fi.Size())
+	compress(fmt.Sprintf("~/.cache/%s.tar.gz", pkg), pkg)
 	u := url.URL{Scheme: "wss", Host: "api.ferment.tk"}
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
@@ -673,8 +668,6 @@ func uploadtoapi(pkg string) {
 			select {
 			case <-interrupt:
 				color.Yellow("\nInterrupted Now Cleaning Up...")
-				os.Remove(fmt.Sprintf("/tmp/%s.tar.gz", pkg))
-				os.Remove(fmt.Sprintf("/tmp/%s.tar.gz.part", pkg))
 				c.WriteMessage(websocket.CloseMessage, []byte{})
 				os.Exit(1)
 			case <-done:
@@ -695,7 +688,7 @@ func uploadtoapi(pkg string) {
 			}
 		}
 	}()
-	cmd := exec.Command("split", "-b", "90M", "-d", fmt.Sprintf("/tmp/%s.tar.gz", pkg), fmt.Sprintf("~/.cache/%s.tar.gz.part", pkg))
+	cmd := exec.Command("split", "-b", "90M", "-d", fmt.Sprintf("~/.cache/%s.tar.gz", pkg), fmt.Sprintf("~/.cache/%s.tar.gz.part", pkg))
 	cmd.Dir = "/tmp/"
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
@@ -717,7 +710,7 @@ func uploadtoapi(pkg string) {
 		Data  dataInternal `json:"data"`
 	}
 	var data Data
-	stat, err := os.Stat(fmt.Sprintf("/tmp/%s.tar.gz", pkg))
+	stat, err := os.Stat(fmt.Sprintf("~/.cache/%s.tar.gz", pkg))
 	if err != nil {
 		spinner.StopFailMessage("Failed - " + err.Error())
 		spinner.StopFail()
