@@ -707,7 +707,7 @@ func uploadtoapi(pkg string) {
 		Data  dataInternal `json:"data"`
 	}
 	var data Data
-	stat, err := os.Stat(fmt.Sprintf("~/.cache/%s.tar.gz", pkg))
+	stat, err := os.Stat(fmt.Sprintf("/tmp/%s.tar.gz", pkg))
 	if err != nil {
 		spinner.StopFailMessage("Failed - " + err.Error())
 		spinner.StopFail()
