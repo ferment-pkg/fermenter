@@ -651,7 +651,7 @@ func uploadtoapi(pkg string) {
 	}
 	spinner.Start()
 	spinner.Message("Initializing...")
-	compress(fmt.Sprintf("~/.cache/%s.tar.gz", pkg), pkg)
+	compress(fmt.Sprintf("/tmp/%s.tar.gz", pkg), pkg)
 	u := url.URL{Scheme: "wss", Host: "api.ferment.tk"}
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
@@ -688,7 +688,7 @@ func uploadtoapi(pkg string) {
 			}
 		}
 	}()
-	cmd := exec.Command("split", "-b", "90M", "-d", fmt.Sprintf("~/.cache/%s.tar.gz", pkg), fmt.Sprintf("~/.cache/%s.tar.gz.part", pkg))
+	cmd := exec.Command("split", "-b", "90M", "-d", fmt.Sprintf("/tmp/%s.tar.gz", pkg), fmt.Sprintf("%s.tar.gz.part", pkg))
 	cmd.Dir = "/tmp/"
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
@@ -729,7 +729,7 @@ func uploadtoapi(pkg string) {
 		spinner.Message(fmt.Sprintf("Uploading Part %d of %d... (%fmb)", i, data.Data.Of, megabytes))
 		data.Data.Part = i
 		//list all files in /tmp
-		files, err := ioutil.ReadDir("~/.cache")
+		files, err := ioutil.ReadDir("/tmp")
 		if err != nil {
 			spinner.StopFailMessage("Failed - " + err.Error())
 			spinner.StopFail()
