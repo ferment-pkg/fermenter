@@ -695,8 +695,10 @@ func uploadtoapi(pkg string) {
 			}
 		}
 	}()
-	cmd := exec.Command("split", "-b", "90M", "-d", fmt.Sprintf("/tmp/%s.tar.gz", pkg), fmt.Sprintf("/tmp/%s.tar.gz.part", pkg))
+	cmd := exec.Command("split", "-b", "90M", "-d", fmt.Sprintf("/tmp/%s.tar.gz", pkg), fmt.Sprintf("~/.cache/%s.tar.gz.part", pkg))
 	cmd.Dir = "/tmp/"
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
 	err = cmd.Run()
 	if err != nil {
 		spinner.StopFailMessage("Failed Line:699 - " + err.Error())
@@ -734,7 +736,7 @@ func uploadtoapi(pkg string) {
 		spinner.Message(fmt.Sprintf("Uploading Part %d of %d... (%fmb)", i, data.Data.Of, megabytes))
 		data.Data.Part = i
 		//list all files in /tmp
-		files, err := ioutil.ReadDir("/tmp")
+		files, err := ioutil.ReadDir("~/.cache")
 		if err != nil {
 			spinner.StopFailMessage("Failed - " + err.Error())
 			spinner.StopFail()
