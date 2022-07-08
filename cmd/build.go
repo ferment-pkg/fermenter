@@ -671,9 +671,11 @@ func uploadtoapi(pkg string) {
 				color.Yellow("\nInterrupted Now Cleaning Up...")
 				c.WriteMessage(websocket.CloseMessage, []byte{})
 				os.Exit(1)
-			case <-done:
-				c.Close()
-				return
+			case done := <-done:
+				if done {
+					c.WriteMessage(websocket.CloseMessage, []byte{})
+					return
+				}
 			}
 		}
 	}()
