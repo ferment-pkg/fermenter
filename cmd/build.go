@@ -542,11 +542,7 @@ func getDependencies(path string, pkg string) []string {
 	io.WriteString(closer, "print(pkg.dependencies)\n")
 	closer.Close()
 	w.Close()
-	err = cmd.Wait()
-	if err != nil {
-		fmt.Println(color.RedString("Unable to get dependencies %s", pkg))
-		panic(err)
-	}
+	cmd.Wait()
 	var buf bytes.Buffer
 	io.Copy(&buf, r)
 	c := strings.Replace(buf.String(), " ", "", -1)
