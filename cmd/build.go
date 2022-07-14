@@ -530,7 +530,7 @@ func getDependencies(path string, pkg string) []string {
 	defer closer.Close()
 	r, w, _ := os.Pipe()
 	cmd.Stdout = w
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = w
 	cmd.Dir = path[:len(path)-len(pkg)-3]
 	err = cmd.Start()
 	if err != nil {
@@ -551,13 +551,16 @@ func getDependencies(path string, pkg string) []string {
 	c = strings.Replace(c, "]", "", -1)
 	c = strings.Replace(c, "\"", "", -1)
 	c = strings.Replace(c, "'", "", -1)
-	if strings.Contains(buf.String(), "Traceback(mostrecentcalllast)") {
+	if strings.Contains(buf.String(), "AttributeError") {
 		return []string{}
 	}
 	return strings.Split(c, ",")
 }
 func installDependencies(dependencies []string, path string, barrellsLoc string) {
 	//check if already installed by using which command
+	if len(dependencies) == 0 {
+		return
+	}
 	for _, dependency := range dependencies {
 		color.Yellow("Installing %s as dependency", dependency)
 		cmd := exec.Command("which", dependency)
