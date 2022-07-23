@@ -838,7 +838,7 @@ func split(fileToBeChunked string) {
 }
 func executeQuickPython(code string, barrellsLoc string) (string, error) {
 	cmd := exec.Command("python3", "-c", code)
-	cmd.Dir = fmt.Sprintf("%s/Barrells", barrellsLoc)
+	cmd.Dir = barrellsloc
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
