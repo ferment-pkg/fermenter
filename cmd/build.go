@@ -36,12 +36,14 @@ import (
 )
 
 // buildCmd represents the build command
+var barrellsloc string
 var buildCmd = &cobra.Command{
 	Use:   "build <package>",
 	Short: "Build and upload prebuilds",
 	Long:  `Build and upload prebuilds to the server holding other prebuilds`,
 	Run: func(cmd *cobra.Command, args []string) {
 		barrellsLoc, err := cmd.Flags().GetString("barrells")
+		barrellsloc = barrellsLoc
 		if err != nil {
 			panic(err)
 		}
@@ -721,7 +723,13 @@ func uploadtoapi(pkg string) {
 	}
 	data.Data.Name = pkg
 	data.Event = "upload"
-	data.Data.File = fmt.Sprintf("%s.tar.gz", pkg)
+	version, err := executeQuickPython(fmt.Sprintf("import %s;pkg=%s.%s();print(pkg.version)", pkg, pkg, pkg), barrellsloc)
+	if err != nil {
+		spinner.StopFailMessage("Failed:VersionRetrieve - " + err.Error())
+		spinner.StopFail()
+		os.Exit(1)
+	}
+	data.Data.File = fmt.Sprintf("%s@%s.tar.gz", pkg, version)
 	data.Data.Part = 1
 	for i := 1; i <= data.Data.Of; i++ {
 		spinner.Message(fmt.Sprintf("Uploading Part %d of %d... (%fmb)", i, data.Data.Of, megabytes))
@@ -827,4 +835,16 @@ func split(fileToBeChunked string) {
 		ioutil.WriteFile(fileName, partBuffer, os.ModeAppend)
 
 	}
+}
+func executeQuickPython(code string, barrellsLoc string) (string, error) {
+	cmd := exec.Command("python3", "-c", code)
+	cmd.Dir = fmt.Sprintf("%s/Barrells", barrellsLoc)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		return "", err
+	}
+	return out.String(), nil
+
 }
