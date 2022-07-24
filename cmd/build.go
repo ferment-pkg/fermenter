@@ -729,7 +729,7 @@ func uploadtoapi(pkg string) {
 		spinner.StopFail()
 		os.Exit(1)
 	}
-	data.Data.File = fmt.Sprintf("%s@%s.tar.gz", pkg, version)
+	data.Data.File = fmt.Sprintf("%s@%s.tar.gz", pkg, strings.Replace(version, "\n", "", -1))
 	data.Data.Part = 1
 	for i := 1; i <= data.Data.Of; i++ {
 		spinner.Message(fmt.Sprintf("Uploading Part %d of %d... (%fmb)", i, data.Data.Of, megabytes))
@@ -763,6 +763,7 @@ func uploadtoapi(pkg string) {
 			os.Exit(1)
 		}
 		c.EnableWriteCompression(true)
+		spinner.Message("Waiting...")
 		err = c.WriteMessage(websocket.TextMessage, en)
 		if err != nil {
 			spinner.StopFailMessage("Failed - " + err.Error())
@@ -770,6 +771,7 @@ func uploadtoapi(pkg string) {
 			os.Exit(1)
 		}
 		r := <-replied
+
 		//wait till r is true
 		for !r {
 			r = <-replied
