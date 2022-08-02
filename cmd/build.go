@@ -660,6 +660,7 @@ func uploadtoapi(pkg string) {
 		color.Red("ERROR - DIAL: %s", err)
 		os.Exit(1)
 	}
+	keepAlive(c, time.Hour/2)
 	interrupt := make(chan os.Signal, 1)
 	done := make(chan bool)
 	replied := make(chan bool)
@@ -849,4 +850,26 @@ func executeQuickPython(code string, barrellsLoc string) (string, error) {
 	}
 	return out.String(), nil
 
+}
+
+func keepAlive(c *websocket.Conn, timeout time.Duration) {
+	lastResponse := time.Now()
+	c.SetPongHandler(func(msg string) error {
+		lastResponse = time.Now()
+		return nil
+	})
+
+	go func() {
+		for {
+			err := c.WriteMessage(websocket.PingMessage, []byte("keepalive"))
+			if err != nil {
+				return
+			}
+			time.Sleep(timeout / 2)
+			if time.Since(lastResponse) > timeout {
+				c.Close()
+				return
+			}
+		}
+	}()
 }
