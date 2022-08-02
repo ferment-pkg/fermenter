@@ -811,7 +811,7 @@ func split(fileToBeChunked string) {
 
 	var fileSize int64 = fileInfo.Size()
 
-	const fileChunk = 1e7 * 9 // 90 MB
+	const fileChunk = 1e7 * 2 // 20 MB
 
 	// calculate total number of parts the file will be chunked into
 
