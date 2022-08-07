@@ -1,6 +1,5 @@
 /*
 Copyright © 2022 NotTimIsReal
-
 */
 package cmd
 
@@ -12,7 +11,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"strconv"
 
@@ -654,7 +652,7 @@ func uploadtoapi(pkg string) {
 	spinner.Start()
 	spinner.Message("Initializing...")
 	compress(fmt.Sprintf("/tmp/%s.tar.gz", pkg), pkg)
-	u := url.URL{Scheme: "wss", Host: "api.ferment.tk"}
+	u := url.URL{Scheme: "wss", Host: "upload.fermentpkg.tech"}
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		color.Red("ERROR - DIAL: %s", err)
@@ -736,7 +734,7 @@ func uploadtoapi(pkg string) {
 		spinner.Message(fmt.Sprintf("Uploading Part %d of %d... (%fmb)", i, data.Data.Of, megabytes))
 		data.Data.Part = i
 		//list all files in /tmp
-		files, err := ioutil.ReadDir("/tmp")
+		files, err := os.ReadDir("/tmp")
 		if err != nil {
 			spinner.StopFailMessage("Failed - " + err.Error())
 			spinner.StopFail()
@@ -795,9 +793,9 @@ func base64Encode(str []byte) string {
 	return base64.StdEncoding.EncodeToString(str)
 }
 
-//Split a file into smaller chunks
-//Splits every 90mb to allow for uploads of more than 90mb
-//Helps bypass cloudflare limit
+// Split a file into smaller chunks
+// Splits every 90mb to allow for uploads of more than 90mb
+// Helps bypass cloudflare limit
 func split(fileToBeChunked string) {
 	file, err := os.Open(fileToBeChunked)
 
@@ -835,7 +833,7 @@ func split(fileToBeChunked string) {
 		}
 
 		// write/save buffer to disk
-		ioutil.WriteFile(fileName, partBuffer, os.ModeAppend)
+		os.WriteFile(fileName, partBuffer, os.ModeAppend)
 
 	}
 }
