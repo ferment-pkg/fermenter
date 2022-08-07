@@ -697,16 +697,12 @@ func uploadtoapi(pkg string) {
 		spinner.StopFail()
 	}
 
-	type dataInternal struct {
+	type Data struct {
 		File string `json:"file"`
 		Part int    `json:"part"`
 		Name string `json:"name"`
 		Of   int    `json:"of"`
 		Data string `json:"data"`
-	}
-	type Data struct {
-		Event string       `json:"event"`
-		Data  dataInternal `json:"data"`
 	}
 	var data Data
 	stat, err := os.Stat(fmt.Sprintf("/tmp/%s.tar.gz", pkg))
@@ -716,23 +712,22 @@ func uploadtoapi(pkg string) {
 		os.Exit(1)
 	}
 	megabytes := math.Round((float64)(stat.Size() / 1e6))
-	data.Data.Of = int(megabytes / 90)
-	if data.Data.Of == 0 {
-		data.Data.Of++
+	data.Of = int(megabytes / 90)
+	if data.Of == 0 {
+		data.Of++
 	}
-	data.Data.Name = pkg
-	data.Event = "upload"
+	data.Name = pkg
 	version, err := executeQuickPython(fmt.Sprintf("import %s;pkg=%s.%s();print(pkg.version)", pkg, pkg, pkg), barrellsloc)
 	if err != nil {
 		spinner.StopFailMessage("Failed:VersionRetrieve - " + err.Error())
 		spinner.StopFail()
 		os.Exit(1)
 	}
-	data.Data.File = fmt.Sprintf("%s@%s.tar.gz", pkg, strings.Replace(version, "\n", "", -1))
-	data.Data.Part = 1
-	for i := 1; i <= data.Data.Of; i++ {
-		spinner.Message(fmt.Sprintf("Uploading Part %d of %d... (%fmb)", i, data.Data.Of, megabytes))
-		data.Data.Part = i
+	data.File = fmt.Sprintf("%s@%s.tar.gz", pkg, strings.Replace(version, "\n", "", -1))
+	data.Part = 1
+	for i := 1; i <= data.Of; i++ {
+		spinner.Message(fmt.Sprintf("Uploading Part %d of %d... (%fmb)", i, data.Of, megabytes))
+		data.Part = i
 		//list all files in /tmp
 		files, err := os.ReadDir("/tmp")
 		if err != nil {
@@ -754,7 +749,7 @@ func uploadtoapi(pkg string) {
 			os.Exit(1)
 		}
 		encoded := base64Encode(content)
-		data.Data.Data = encoded
+		data.Data = encoded
 		en, err := json.Marshal(data)
 		if err != nil {
 			spinner.StopFailMessage("Failed - " + err.Error())
@@ -775,7 +770,7 @@ func uploadtoapi(pkg string) {
 		for !r {
 			r = <-replied
 		}
-		spinner.Message(fmt.Sprintf("Uploaded Part %d of %d", i, data.Data.Of))
+		spinner.Message(fmt.Sprintf("Uploaded Part %d of %d", i, data.Of))
 		os.WriteFile("test.json", en, 0644)
 
 	}
