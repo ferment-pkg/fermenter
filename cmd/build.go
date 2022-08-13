@@ -592,6 +592,7 @@ func installDependencies(dependencies []string, path string, barrellsLoc string)
 		fmt.Printf(color.YellowString("Now Installing %s\n"), dependency)
 		cmd = exec.Command("ferment", "install", dependency)
 		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stderr
 		err = cmd.Run()
 		if err != nil {
 			panic(err)
