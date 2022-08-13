@@ -45,8 +45,7 @@ var buildCmd = &cobra.Command{
 		if err != nil {
 			panic(err)
 		}
-		useExisting, err := cmd.Flags().GetBool("useexisting")
-
+		useExisting, err := cmd.Flags().GetBool("use-existing")
 		if err != nil {
 			panic(err)
 		}
@@ -74,7 +73,9 @@ var buildCmd = &cobra.Command{
 			installDependencies(dep, pkg, barrellsLoc)
 			runBuildCommand(pkg, args[0])
 		}
+
 		uploadtoapi(args[0])
+
 	},
 }
 
@@ -95,7 +96,8 @@ func init() {
 	}
 	location = location[:len(location)-len("/fermenter")]
 	buildCmd.Flags().String("barrells", fmt.Sprintf("%s/Barrells", location), "Path for the barrells")
-	buildCmd.Flags().BoolP("useexisting", "E", false, "Use existing build")
+	buildCmd.Flags().BoolP("use-existing", "E", false, "Use existing build")
+	buildCmd.Flags().BoolP("no-upload", "n", false, "Build but do not upload to the server")
 }
 func compress(outputPath string, inputPath string) {
 	cmd := exec.Command("tar", "-czf", outputPath, "-C/tmp/fermenter", inputPath)
@@ -681,12 +683,15 @@ func uploadtoapi(pkg string) {
 	}()
 	go func() {
 		for {
+			//check if connection is closed
 			_, content, err := c.ReadMessage()
 			if err != nil {
 				l.Fatal(err)
+				done <- true
+				break
 			}
 			l.Println(string(content))
-			if strings.Contains(string(content), "Uploaded") {
+			if strings.Contains(strings.ToLower(string(content)), "uploaded") {
 				replied <- true
 			}
 		}
@@ -834,12 +839,14 @@ func split(fileToBeChunked string) {
 }
 func executeQuickPython(code string, barrellsLoc string) (string, error) {
 	cmd := exec.Command("python3", "-c", code)
-	cmd.Dir = barrellsloc
+	cmd.Dir = barrellsLoc
 	var out bytes.Buffer
+	var errPipe bytes.Buffer
 	cmd.Stdout = &out
-	err := cmd.Run()
-	if err != nil {
-		return "", err
+	cmd.Stderr = &errPipe
+	cmd.Run()
+	if errPipe.Len() > 0 {
+		return "", errors.New(errPipe.String())
 	}
 	return out.String(), nil
 
