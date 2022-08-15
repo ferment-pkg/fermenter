@@ -840,7 +840,7 @@ func split(fileToBeChunked string) {
 	}
 }
 func executeQuickPython(code string, barrellsLoc string) (string, error) {
-	cmd := exec.Command("python3", "-c", code)
+	cmd := exec.Command("sudo", "python3", "-c", code)
 	cmd.Dir = barrellsLoc
 	var out bytes.Buffer
 	var errPipe bytes.Buffer

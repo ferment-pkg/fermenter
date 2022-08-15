@@ -139,7 +139,7 @@ func installPKG(pkg string, barrells string) {
 		StopFailCharacter: "✗",
 		StopFailColors:    []string{"fgRed"},
 		SuffixAutoColon:   true,
-		Message:           "Installing %s",
+		Message:           fmt.Sprintf("Installing %s", pkg),
 		StopMessage:       fmt.Sprintf("Successfully installed %s", pkg),
 	})
 	if err != nil {
