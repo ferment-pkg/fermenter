@@ -6,7 +6,6 @@ package cmd
 import (
 	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -247,72 +246,47 @@ func downloadsource(pkg string, path string) bool {
 	spinner.Stop()
 	return true
 }
-func Untar(dst string, r io.Reader, pkg string, isGz bool) (string, error) {
-	if !isGz {
-		untarxz(r, pkg, dst)
-		return "", nil
-	}
-	gzr, err := gzip.NewReader(r)
+func Untar(dst string, downloadedFile string, pkg string) error {
+	os.Mkdir(dst, 0777)
+	//list dst
+	oldentries, err := os.ReadDir(dst)
 	if err != nil {
-		return "", err
+		return err
 	}
-	defer gzr.Close()
+	cmd := exec.Command("tar", "-xvf", downloadedFile, "--directory", dst)
 
-	tr := tar.NewReader(gzr)
+	var bytes bytes.Buffer
+	cmd.Stderr = &bytes
+	err = cmd.Run()
 
-	for {
-		header, err := tr.Next()
-
-		switch {
-
-		// if no more files are found return
-		case err == io.EOF:
-			return "", nil
-
-		// return any other error
-		case err != nil:
-			return "", err
-
-		// if the header is nil, just skip it (not sure how this happens)
-		case header == nil:
-			continue
-		}
-
-		// the target location where the dir/file should be created
-		header.Name = fmt.Sprintf("%s/%s", pkg, strings.Join(strings.Split(header.Name, "/")[1:], "/"))
-		target := filepath.Join(dst, header.Name)
-
-		// the following switch could also be done using fi.Mode(), not sure if there
-		// a benefit of using one vs. the other.
-		// fi := header.FileInfo()
-
-		// check the file type
-		switch header.Typeflag {
-
-		// if its a dir and it doesn't exist create it
-		case tar.TypeDir:
-			if _, err := os.Stat(target); err != nil {
-				if err := os.MkdirAll(target, 0755); err != nil {
-					return "", err
+	if err != nil {
+		return errors.New(bytes.String())
+	}
+	newentries, err := os.ReadDir(dst)
+	if err != nil {
+		return err
+	}
+	//find the difference between the two
+	if len(oldentries) == 0 && len(newentries) > 0 {
+		os.Rename(fmt.Sprintf("%s/%s", dst, newentries[0].Name()), fmt.Sprintf("%s/%s", dst, pkg))
+	} else {
+		//Using the old entries, find the first one that is not in the old entries
+		for _, entry := range newentries {
+			found := false
+			for _, oldentry := range oldentries {
+				if entry.Name() == oldentry.Name() {
+					found = true
+					break
 				}
 			}
-
-		// if it's a file create it
-		case tar.TypeReg:
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
-			if err != nil {
-				return "", err
+			if !found {
+				os.Rename(fmt.Sprintf("%s/%s", dst, entry.Name()), fmt.Sprintf("%s/%s", dst, pkg))
+				break
 			}
-			// copy over contents
-			if _, err := io.Copy(f, tr); err != nil {
-				return "", err
-			}
-
-			// manually close here after each file operation; defering would cause each file close
-			// to wait until all operations have completed.
-			f.Close()
 		}
 	}
+
+	return nil
 
 }
 func DownloadFromGithub(url string, pkg string) error {
@@ -392,12 +366,6 @@ func GetGitURL(pkg string, path string) string {
 
 }
 func DownloadFromTar(pkg string, url string) string {
-	var isGZ bool
-	if strings.Contains(url, ".gz") {
-		isGZ = true
-	} else {
-		isGZ = false
-	}
 	resp, err := http.Get(url)
 	if err != nil {
 		fmt.Println(color.RedString("Unable to download %s", pkg))
@@ -409,12 +377,18 @@ func DownloadFromTar(pkg string, url string) string {
 	}
 	defer resp.Body.Close()
 	pkg = convertToReadableString(strings.ToLower(pkg))
-	path, err := Untar("/tmp/fermenter/", resp.Body, convertToReadableString(strings.ToLower(pkg)), isGZ)
+	fileName := strings.Split(url, "/")[len(strings.Split(url, "/"))-1]
+	file, err := os.OpenFile(fmt.Sprintf("/tmp/%s", fileName), os.O_CREATE|os.O_WRONLY, 0777)
+	if err != nil {
+		panic(err)
+	}
+	io.Copy(file, resp.Body)
+	err = Untar("/tmp/fermenter/", fmt.Sprintf("/tmp/%s", fileName), convertToReadableString(strings.ToLower(pkg)))
 	if err != nil {
 		fmt.Println(color.RedString("Unable to extract %s", pkg))
 		panic(err)
 	}
-	return path
+	return fmt.Sprintf("/tmp/fermenter/%s", pkg)
 }
 func GetDownloadUrl(pkg string, path string) string {
 	content, err := getFileContent(path)
