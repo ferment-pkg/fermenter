@@ -651,7 +651,6 @@ func uploadtoapi(pkg string) {
 				os.Exit(1)
 			case done := <-done:
 				if done {
-					c.WriteMessage(websocket.CloseMessage, []byte{})
 					return
 				}
 			}
