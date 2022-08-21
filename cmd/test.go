@@ -51,7 +51,10 @@ var testCmd = &cobra.Command{
 		compress(fmt.Sprintf("%s.tar.gz", args[0]), args[0])
 		fmt.Printf("Compress Path: /tmp/%s.tar.gz\n", args[0])
 		installPKG(args[0], barrellsLoc)
-		test(args[0], barrellsLoc)
+		if !test(args[0], barrellsLoc) {
+			executeQuickPython(fmt.Sprintf("import os;from %s import %s;pkg=%s();pkg.cwd='/tmp/fermenter/%s/';pkg.uninstall()", args[0], args[0], args[0], args[0]), barrellsLoc)
+			os.Exit(1)
+		}
 		executeQuickPython(fmt.Sprintf("import os;from %s import %s;pkg=%s();pkg.cwd='/tmp/fermenter/%s/';pkg.uninstall()", args[0], args[0], args[0], args[0]), barrellsLoc)
 
 	},
