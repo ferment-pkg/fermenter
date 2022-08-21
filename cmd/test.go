@@ -46,6 +46,8 @@ var testCmd = &cobra.Command{
 		dep := getDependencies(pkg, args[0])
 		installDependencies(dep, pkg, barrellsLoc)
 		runBuildCommand(pkg, args[0])
+		fmt.Println("Printing Logs From Build If Exists")
+		fmt.Println(showLogs(args[0]))
 		compress(fmt.Sprintf("%s.tar.gz", args[0]), args[0])
 		fmt.Printf("Compress Path: /tmp/%s.tar.gz\n", args[0])
 		installPKG(args[0], barrellsLoc)
@@ -185,4 +187,12 @@ func checkIfBinaryRequired(pkg string, barrellsLoc string) *string {
 	}
 	out = strings.Replace(out, "\n", "", -1)
 	return &out
+}
+func showLogs(pkg string) string {
+	os.Chdir(fmt.Sprintf("/tmp/fermenter/%s", pkg))
+	logs, err := os.ReadFile(fmt.Sprintf("%s-build.log", pkg))
+	if err != nil {
+		return ""
+	}
+	return string(logs)
 }
