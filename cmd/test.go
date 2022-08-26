@@ -42,7 +42,7 @@ var testCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		color.Green("Found package %s\n", pkg)
-		validatePyFile(pkg, barrellsLoc)
+		validatePyFile(args[0], barrellsLoc)
 		downloadsource(args[0], barrellsLoc)
 		dep := getDependencies(pkg, args[0])
 		installDependencies(dep, pkg, barrellsLoc)
@@ -216,7 +216,7 @@ func validatePyFile(pkg string, barrellsLoc string) {
 	}
 	spinner.Start()
 	spinner.Message("Reading...")
-	content, err := os.ReadFile(fmt.Sprintf("%s/%s.py", barrellsloc, pkg))
+	content, err := os.ReadFile(fmt.Sprintf("%s/%s.py", barrellsLoc, pkg))
 	if err != nil {
 		spinner.StopFailMessage(err.Error())
 		spinner.StopFail()
