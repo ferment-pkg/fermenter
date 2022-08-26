@@ -539,7 +539,13 @@ func installDependencies(dependencies []string, path string, barrellsLoc string)
 	}
 	for _, dependency := range dependencies {
 		color.Yellow("Installing %s as dependency", dependency)
-		cmd := exec.Command("which", dependency)
+		//check if you can split dep by :
+		var command = dependency
+		if strings.Contains(dependency, ":") {
+			dependency = strings.Split(dependency, ":")[0]
+			command = strings.Split(dependency, ":")[1]
+		}
+		cmd := exec.Command("which", strings.ReplaceAll(command, "'", ""))
 		r, w, err := os.Pipe()
 		if err != nil {
 			panic(err)
@@ -567,6 +573,7 @@ func installDependencies(dependencies []string, path string, barrellsLoc string)
 		cmd = exec.Command("ferment", "install", dependency)
 		cmd.Stderr = os.Stderr
 		cmd.Stdout = os.Stderr
+		cmd.Stdin = os.Stdin
 		err = cmd.Run()
 		if err != nil {
 			panic(err)

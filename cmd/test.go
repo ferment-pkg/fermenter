@@ -42,6 +42,7 @@ var testCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		color.Green("Found package %s\n", pkg)
+		validatePyFile(pkg, barrellsLoc)
 		downloadsource(args[0], barrellsLoc)
 		dep := getDependencies(pkg, args[0])
 		installDependencies(dep, pkg, barrellsLoc)
@@ -198,4 +199,62 @@ func showLogs(pkg string) string {
 		return ""
 	}
 	return string(logs)
+}
+func validatePyFile(pkg string, barrellsLoc string) {
+	spinner, err := yacspin.New(yacspin.Config{
+		Frequency:         100 * time.Millisecond,
+		CharSet:           yacspin.CharSets[57],
+		Suffix:            color.GreenString(" Validating"),
+		SuffixAutoColon:   true,
+		StopCharacter:     "✓",
+		StopColors:        []string{"fgGreen"},
+		StopFailCharacter: "✗",
+		StopFailColors:    []string{"fgRed"},
+	})
+	if err != nil {
+		panic(err)
+	}
+	spinner.Start()
+	spinner.Message("Reading...")
+	content, err := os.ReadFile(fmt.Sprintf("%s/%s.py", barrellsloc, pkg))
+	if err != nil {
+		spinner.StopFailMessage(err.Error())
+		spinner.StopFail()
+		os.Exit(1)
+	}
+	spinner.Message("Testing Syntax...")
+	_, err = executeQuickPython(string(content), barrellsLoc)
+	if err != nil {
+		spinner.StopFailMessage(err.Error())
+		spinner.StopFail()
+		os.Exit(1)
+	}
+	spinner.Message("Testing For Required Labels")
+	count := 0
+	requiredlabels := []string{"version", "git", "description", "url"}
+	for _, label := range requiredlabels {
+		go func(label string) {
+			out, err := executeQuickPython(fmt.Sprintf("from %s import %s;pkg=%s();print(pkg.%s)", pkg, pkg, pkg, label), barrellsLoc)
+			if err != nil {
+				spinner.StopFailMessage(err.Error())
+				spinner.StopFail()
+				os.Exit(1)
+			}
+			if out == "" {
+				spinner.StopFailMessage(fmt.Sprintf("%s is required", label))
+				spinner.StopFail()
+				os.Exit(1)
+			}
+			count++
+			spinner.Message(fmt.Sprintf("%s found", label))
+		}(label)
+	}
+	for {
+		if count == len(requiredlabels) {
+			break
+		}
+		time.Sleep(time.Millisecond * 100)
+	}
+	spinner.Message("All Required Labels Found")
+	spinner.Stop()
 }
