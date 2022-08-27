@@ -533,30 +533,23 @@ func getDependencies(path string, pkg string) []string {
 	return strings.Split(c, ",")
 }
 func installDependencies(dependencies []string, path string, barrellsLoc string) {
+	fmt.Println(color.GreenString("Installing dependencies"))
 	//check if already installed by using which command
 	if len(dependencies) == 0 {
 		return
 	}
 	for _, dependency := range dependencies {
-		color.Yellow("Installing %s as dependency", dependency)
 		//check if you can split dep by :
 		var command = dependency
 		if strings.Contains(dependency, ":") {
-			dependency = strings.Split(dependency, ":")[0]
-			command = strings.Split(dependency, ":")[1]
+			command = strings.Split(dependency, ":")[0]
+			dependency = strings.Split(dependency, ":")[1]
+
 		}
+		color.Yellow("Installing %s as dependency", dependency)
 		cmd := exec.Command("which", strings.ReplaceAll(command, "'", ""))
-		r, w, err := os.Pipe()
-		if err != nil {
-			panic(err)
-		}
-		cmd.Stdout = w
-		cmd.Start()
-		w.Close()
-		cmd.Wait()
-		var buf bytes.Buffer
-		io.Copy(&buf, r)
-		if buf.String() != "" {
+		err := cmd.Run()
+		if err == nil {
 			color.Yellow("%s already installed", dependency)
 			continue
 		}
