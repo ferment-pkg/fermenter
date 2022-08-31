@@ -39,6 +39,10 @@ var buildCmd = &cobra.Command{
 	Short: "Build and upload prebuilds",
 	Long:  `Build and upload prebuilds to the server holding other prebuilds`,
 	Run: func(cmd *cobra.Command, args []string) {
+		dualarch, err := cmd.Flags().GetBool("dual-arch")
+		if err != nil {
+			panic(err)
+		}
 		barrellsLoc, err := cmd.Flags().GetString("barrells")
 		barrellsloc = barrellsLoc
 		if err != nil {
@@ -48,7 +52,7 @@ var buildCmd = &cobra.Command{
 		if err != nil {
 			panic(err)
 		}
-
+		noupload, err := cmd.Flags().GetBool("no-upload")
 		if dir, err := isDir(barrellsLoc); err != nil || !dir {
 			color.Red("ERROR: Barrells location is not a directory or does not exist")
 			os.Exit(1)
@@ -67,13 +71,28 @@ var buildCmd = &cobra.Command{
 		}
 		color.Green("Found package %s\n", pkg)
 		if !useExisting {
-			downloadsource(args[0], barrellsLoc)
 			dep := getDependencies(pkg, args[0])
 			installDependencies(dep, pkg, barrellsLoc)
-			runBuildCommand(pkg, args[0])
-		}
+			if !dualarch || !checkIfPackageIsDualArch(pkg) {
+				downloadsource(args[0], barrellsLoc)
+				runBuildCommand(pkg, args[0], "")
+			} else {
+				for _, arch := range []string{"amd64", "arm64"} {
+					fmt.Println("Building for arch:", arch)
+					downloadsource(args[0], barrellsLoc)
+					runBuildCommand(pkg, args[0], arch)
+					if !noupload {
+						uploadtoapi(args[0], arch)
+					}
+					//clena up
+					os.Remove(fmt.Sprintf("/tmp/fermenter/%s", args[0]))
+				}
+			}
 
-		uploadtoapi(args[0])
+		}
+		if !noupload {
+			uploadtoapi(args[0], "")
+		}
 
 	},
 }
@@ -97,6 +116,7 @@ func init() {
 	buildCmd.Flags().String("barrells", fmt.Sprintf("%s/Barrells", location), "Path for the barrells")
 	buildCmd.Flags().BoolP("use-existing", "E", false, "Use existing build")
 	buildCmd.Flags().BoolP("no-upload", "n", false, "Build but do not upload to the server")
+	buildCmd.Flags().BoolP("dual-arch", "D", false, "Build for both arches seperately and upload twice to the server")
 }
 func compress(outputPath string, inputPath string) {
 	cmd := exec.Command("tar", "-czf", outputPath, "-C/tmp/fermenter", inputPath)
@@ -138,7 +158,7 @@ func getFileContent(file string) ([]byte, error) {
 	}
 	return content, nil
 }
-func runBuildCommand(path string, pkg string) {
+func runBuildCommand(path string, pkg string, arch string) {
 	cfg := yacspin.Config{
 		Frequency:         100 * time.Millisecond,
 		CharSet:           yacspin.CharSets[14],
@@ -159,7 +179,7 @@ func runBuildCommand(path string, pkg string) {
 	}
 	spinner.Start()
 	spinner.Message("Building")
-	if !build(pkg, path) {
+	if !build(pkg, path, arch) {
 		spinner.StopFail()
 		os.Exit(1)
 	}
@@ -171,7 +191,10 @@ func doesExist(file string) bool {
 	}
 	return true
 }
-func build(pkg string, path string) bool {
+func build(pkg string, path string, arch string) bool {
+	if arch == "" {
+		arch = "universal"
+	}
 	content, err := getFileContent(path)
 	if err != nil {
 		return false
@@ -197,6 +220,7 @@ func build(pkg string, path string) bool {
 	closer.Write([]byte("\n"))
 	io.WriteString(closer, fmt.Sprintf("pkg=%s()\n", convertToReadableString(strings.ToLower(pkg))))
 	io.WriteString(closer, fmt.Sprintf(`pkg.cwd="/tmp/fermenter/%s"`, pkg)+"\n")
+	io.WriteString(closer, fmt.Sprintf(`pkg.arch="%s"`, arch)+"\n")
 	io.WriteString(closer, "pkg.build()\n")
 	closer.Close()
 	w.Close()
@@ -605,7 +629,7 @@ func IsLib(pkg string, location string) bool {
 	}
 
 }
-func uploadtoapi(pkg string) {
+func uploadtoapi(pkg string, arch string) {
 
 	f, _ := os.OpenFile("/tmp/fermenter.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	l := log.New(f, "UPLOAD: ", log.Ltime)
@@ -703,7 +727,12 @@ func uploadtoapi(pkg string) {
 		spinner.StopFail()
 		os.Exit(1)
 	}
-	data.File = fmt.Sprintf("%s@%s.tar.gz", pkg, strings.Replace(version, "\n", "", -1))
+	if arch != "" {
+		data.File = fmt.Sprintf("%s-%s@%s.tar.gz", pkg, arch, strings.Replace(version, "\n", "", -1))
+	} else {
+		data.File = fmt.Sprintf("%s@%s.tar.gz", pkg, strings.Replace(version, "\n", "", -1))
+	}
+
 	data.Part = 1
 	for i := 1; i <= data.Of; i++ {
 		spinner.Message(fmt.Sprintf("Uploading Part %d of %d... (%fmb)", i, data.Of, megabytes))
@@ -847,4 +876,11 @@ func keepAlive(c *websocket.Conn, timeout time.Duration) {
 			}
 		}
 	}()
+}
+func checkIfPackageIsDualArch(pkg string) bool {
+	dual, err := executeQuickPython(fmt.Sprintf("from %s import %s;pkg=%s();print(pkg.dualarch)", pkg, pkg, pkg), barrellsloc)
+	if err != nil {
+		return false
+	}
+	return dual == "True"
 }

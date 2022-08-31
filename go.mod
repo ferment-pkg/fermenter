@@ -5,8 +5,9 @@ go 1.18
 require (
 	github.com/fatih/color v1.13.0
 	github.com/go-git/go-git/v5 v5.4.2
+	github.com/gorilla/websocket v1.5.0
 	github.com/graarh/golang-socketio v0.0.0-20170510162725-2c44953b9b5f
-	github.com/spf13/cobra v1.4.0
+	github.com/spf13/cobra v1.5.0
 	github.com/theckman/yacspin v0.13.12
 	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8
 	github.com/zhouhui8915/go-socket.io-client v0.0.0-20200925034401-83ee73793ba4
@@ -19,9 +20,8 @@ require (
 	github.com/emirpasic/gods v1.12.0 // indirect
 	github.com/go-git/gcfg v1.5.0 // indirect
 	github.com/go-git/go-billy/v5 v5.3.1 // indirect
-	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
-	github.com/inconshreveable/mousetrap v1.0.0 // indirect
+	github.com/inconshreveable/mousetrap v1.0.1 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v0.0.0-20201106050909-4977a11b4351 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect

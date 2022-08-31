@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -46,7 +47,9 @@ var testCmd = &cobra.Command{
 		downloadsource(args[0], barrellsLoc)
 		dep := getDependencies(pkg, args[0])
 		installDependencies(dep, pkg, barrellsLoc)
-		runBuildCommand(pkg, args[0])
+		//get arch from go sys
+
+		runBuildCommand(pkg, args[0], runtime.GOARCH)
 		fmt.Println("Printing Logs From Build If Exists")
 		fmt.Println(showLogs(args[0]))
 		compress(fmt.Sprintf("%s.tar.gz", args[0]), args[0])
