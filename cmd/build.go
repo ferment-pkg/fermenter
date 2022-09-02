@@ -27,6 +27,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/go-git/go-git/v5"
 	"github.com/gorilla/websocket"
+	"github.com/radovskyb/watcher"
 	"github.com/spf13/cobra"
 	"github.com/theckman/yacspin"
 	"github.com/xi2/xz"
@@ -80,11 +81,15 @@ var buildCmd = &cobra.Command{
 				for _, arch := range []string{"amd64", "arm64"} {
 					fmt.Println("Building for arch:", arch)
 					downloadsource(args[0], barrellsLoc)
+					doneBuilding := make(chan bool)
+					go magicWatcher(args[0], doneBuilding)
 					runBuildCommand(pkg, args[0], arch)
+					doneBuilding <- true
 					if !noupload {
 						uploadtoapi(args[0], arch)
 					}
 					//clena up
+
 					os.Remove(fmt.Sprintf("/tmp/fermenter/%s", args[0]))
 				}
 			}
@@ -883,4 +888,35 @@ func checkIfPackageIsDualArch(pkg string) bool {
 		return false
 	}
 	return dual == "True"
+}
+func magicWatcher(pkg string, done chan bool) {
+	watch := watcher.New()
+	watch.Add("/usr/local")
+	watch.Start(100)
+	watcherfile, err := os.OpenFile("/tmp/fermenter/"+pkg+"/.ferment-watcher", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	go func() {
+		for {
+			select {
+			case event := <-watch.Event:
+				if event.Op == watcher.Create && strings.Contains(event.Path, pkg) {
+					watcherfile.WriteString(event.Path + "\n")
+				}
+			case <-watch.Closed:
+				return
+			}
+		}
+	}()
+	for {
+		d := <-done
+		if d {
+			break
+		}
+	}
+	watch.Close()
+	watcherfile.Close()
+
 }
