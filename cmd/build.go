@@ -4,7 +4,6 @@ Copyright © 2022 NotTimIsReal
 package cmd
 
 import (
-	"archive/tar"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
@@ -20,7 +19,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -30,7 +28,6 @@ import (
 	"github.com/radovskyb/watcher"
 	"github.com/spf13/cobra"
 	"github.com/theckman/yacspin"
-	"github.com/xi2/xz"
 )
 
 // buildCmd represents the build command
@@ -54,6 +51,9 @@ var buildCmd = &cobra.Command{
 			panic(err)
 		}
 		noupload, err := cmd.Flags().GetBool("no-upload")
+		if err != nil {
+			panic(err)
+		}
 		if dir, err := isDir(barrellsLoc); err != nil || !dir {
 			color.Red("ERROR: Barrells location is not a directory or does not exist")
 			os.Exit(1)
@@ -74,9 +74,13 @@ var buildCmd = &cobra.Command{
 		if !useExisting {
 			dep := getDependencies(pkg, args[0])
 			installDependencies(dep, pkg, barrellsLoc)
-			if !dualarch || !checkIfPackageIsDualArch(pkg) {
+			if !dualarch && !checkIfPackageIsDualArch(pkg) {
 				downloadsource(args[0], barrellsLoc)
+				doneBuilding := make(chan bool)
+				go magicWatcher(args[0], doneBuilding)
 				runBuildCommand(pkg, args[0], "")
+				doneBuilding <- true
+				os.Exit(0)
 			} else {
 				for _, arch := range []string{"amd64", "arm64"} {
 					fmt.Println("Building for arch:", arch)
@@ -84,6 +88,8 @@ var buildCmd = &cobra.Command{
 					doneBuilding := make(chan bool)
 					go magicWatcher(args[0], doneBuilding)
 					runBuildCommand(pkg, args[0], arch)
+
+					installPKG(args[0], barrellsLoc)
 					doneBuilding <- true
 					if !noupload {
 						uploadtoapi(args[0], arch)
@@ -92,6 +98,7 @@ var buildCmd = &cobra.Command{
 
 					os.Remove(fmt.Sprintf("/tmp/fermenter/%s", args[0]))
 				}
+				os.Exit(0)
 			}
 
 		}
@@ -267,6 +274,8 @@ func downloadsource(pkg string, path string) bool {
 		url := GetGitURL(pkg, path)
 		err := DownloadFromGithub(url, pkg)
 		if err != nil {
+			spinner.StopFailMessage(err.Error())
+			spinner.StopFail()
 			return false
 		}
 	} else {
@@ -458,70 +467,7 @@ func GetDownloadUrl(pkg string, path string) string {
 	path = DownloadFromTar(convertToReadableString(strings.ToLower(pkg)), strings.Replace(buf.String(), "\n", "", -1))
 	return path
 }
-func untarxz(r io.Reader, pkg string, dst string) {
-	// Create an xz Reader
-	r, err := xz.NewReader(r, 0)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Create a tar Reader
-	tr := tar.NewReader(r)
-	// Iterate through the files in the archive.
 
-	for {
-		header, err := tr.Next()
-
-		switch {
-
-		// if no more files are found return
-		case err == io.EOF:
-			break
-
-		// return any other error
-		case err != nil:
-			break
-
-		// if the header is nil, just skip it (not sure how this happens)
-		case header == nil:
-			continue
-		}
-
-		// the target location where the dir/file should be created
-		header.Name = fmt.Sprintf("%s/%s", pkg, strings.Join(strings.Split(header.Name, "/")[1:], "/"))
-		target := filepath.Join(dst, header.Name)
-
-		// the following switch could also be done using fi.Mode(), not sure if there
-		// a benefit of using one vs. the other.
-		// fi := header.FileInfo()
-
-		// check the file type
-		switch header.Typeflag {
-
-		// if its a dir and it doesn't exist create it
-		case tar.TypeDir:
-			if _, err := os.Stat(target); err != nil {
-				if err := os.MkdirAll(target, 0755); err != nil {
-					panic(err)
-				}
-			}
-
-		// if it's a file create it
-		case tar.TypeReg:
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
-			if err != nil {
-				panic(err)
-			}
-			// copy over contents
-			if _, err := io.Copy(f, tr); err != nil {
-				panic(err)
-			}
-
-			// manually close here after each file operation; defering would cause each file close
-			// to wait until all operations have completed.
-			f.Close()
-		}
-	}
-}
 func getDependencies(path string, pkg string) []string {
 	content, err := getFileContent(path)
 	if err != nil {
@@ -891,18 +837,22 @@ func checkIfPackageIsDualArch(pkg string) bool {
 }
 func magicWatcher(pkg string, done chan bool) {
 	watch := watcher.New()
+	dirsWatched := []string{"bin", "share", "include", "lib"}
+	for _, dir := range dirsWatched {
+		watch.Add(fmt.Sprintf("/usr/local/%s", dir))
+	}
 	watch.Add("/usr/local")
-	watch.Start(100)
-	watcherfile, err := os.OpenFile("/tmp/fermenter/"+pkg+"/.ferment-watcher", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	go watch.Start(10 * time.Millisecond)
+	watcherfile, err := os.OpenFile("/tmp/fermenter/"+pkg+"/.ferment-watcher", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0777)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		panic(err)
 	}
 	go func() {
 		for {
 			select {
 			case event := <-watch.Event:
-				if event.Op == watcher.Create && strings.Contains(event.Path, pkg) {
+				//ger file name
+				if event.Op == watcher.Create || event.Op == watcher.Write && strings.Contains(event.Path, pkg) {
 					watcherfile.WriteString(event.Path + "\n")
 				}
 			case <-watch.Closed:
